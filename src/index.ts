@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import cron from "node-cron";
+import zonasRoutes from './routes/zonas.routes';
 import authRoutes from './routes/auth.routes';
 import tinkerRoutes from "./routes/tinker.routes";
 import controlRoutes from "./routes/control.routes";
@@ -18,6 +19,7 @@ app.use("/api/tinker", tinkerRoutes);
 app.use("/api/control", controlRoutes);
 app.use("/api/automatizacion", automatizacionRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/zonas', zonasRoutes);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", project: "Malima Backend", version: "1.0.0" });
