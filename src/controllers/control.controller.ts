@@ -1,16 +1,24 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
+import { getConfigValue } from "./configuracion.controller";
 
-const TINKERBOARD_URL = process.env.TINKERBOARD_URL ?? "http://192.168.1.100";
-
-// Envía el comando HTTP a la TinkerBoard
 const enviarComando = async (comando: object): Promise<boolean> => {
   try {
-    const response = await fetch(`${TINKERBOARD_URL}/comando`, {
+    const url =
+      (await getConfigValue("tinkerboard_url")) ??
+      process.env.TINKERBOARD_URL ??
+      "http://192.168.1.100";
+    const endpoint =
+      (await getConfigValue("tinkerboard_endpoint_comando")) ?? "/comando";
+    const timeout = parseInt(
+      (await getConfigValue("tinkerboard_timeout")) ?? "5000",
+    );
+
+    const response = await fetch(`${url}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(comando),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(timeout),
     });
     return response.ok;
   } catch (error) {
@@ -53,12 +61,10 @@ export const controlarInvernadero = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "accion debe ser: abrir, cerrar o detener",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "accion debe ser: abrir, cerrar o detener",
+      });
       return;
     }
 
@@ -79,13 +85,11 @@ export const controlarInvernadero = async (
     const invernadero = inv.rows[0];
 
     if (invernadero.modo === "local") {
-      res
-        .status(409)
-        .json({
-          ok: false,
-          mensaje:
-            "El invernadero está en modo local. Cambia el modo desde el tablero.",
-        });
+      res.status(409).json({
+        ok: false,
+        mensaje:
+          "El invernadero está en modo local. Cambia el modo desde el tablero.",
+      });
       return;
     }
 
@@ -110,12 +114,10 @@ export const controlarInvernadero = async (
     );
 
     if (!enviado) {
-      res
-        .status(502)
-        .json({
-          ok: false,
-          mensaje: "No se pudo comunicar con la TinkerBoard",
-        });
+      res.status(502).json({
+        ok: false,
+        mensaje: "No se pudo comunicar con la TinkerBoard",
+      });
       return;
     }
 
@@ -139,12 +141,10 @@ export const controlarZona = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "accion debe ser: abrir, cerrar o detener",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "accion debe ser: abrir, cerrar o detener",
+      });
       return;
     }
 
@@ -157,12 +157,10 @@ export const controlarZona = async (
     );
 
     if (invernaderos.rows.length === 0) {
-      res
-        .status(404)
-        .json({
-          ok: false,
-          mensaje: "No hay invernaderos disponibles en esta zona",
-        });
+      res.status(404).json({
+        ok: false,
+        mensaje: "No hay invernaderos disponibles en esta zona",
+      });
       return;
     }
 
@@ -212,12 +210,10 @@ export const cambiarModo = async (
     const { modo } = req.body;
 
     if (!modo || !["local", "remoto", "automatico"].includes(modo)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "modo debe ser: local, remoto o automatico",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "modo debe ser: local, remoto o automatico",
+      });
       return;
     }
 

@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.routes';
 import tinkerRoutes from "./routes/tinker.routes";
 import controlRoutes from "./routes/control.routes";
 import automatizacionRoutes from "./routes/automatizacion.routes";
+import configuracionRoutes from './routes/configuracion.routes';
 
 dotenv.config();
 
@@ -20,6 +21,7 @@ app.use("/api/control", controlRoutes);
 app.use("/api/automatizacion", automatizacionRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/zonas', zonasRoutes);
+app.use('/api/configuracion', configuracionRoutes);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", project: "Malima Backend", version: "1.0.0" });
