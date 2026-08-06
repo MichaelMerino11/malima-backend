@@ -65,3 +65,18 @@ export const soloOperadorOAdmin = (
   }
   next();
 };
+
+export const verificarApiKey = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const apiKey = req.headers["x-api-key"];
+  const validKey = process.env.TINKER_API_KEY ?? "malima-tinker-2026";
+
+  if (!apiKey || apiKey !== validKey) {
+    res.status(401).json({ ok: false, mensaje: "API Key inválida o ausente" });
+    return;
+  }
+  next();
+};

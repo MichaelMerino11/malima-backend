@@ -2,7 +2,19 @@ import { Request, Response } from "express";
 import pool from "../config/db";
 import { getConfigValue } from "./configuracion.controller";
 
-const enviarComando = async (comando: object): Promise<boolean> => {
+const generarCommandId = () => {
+  const num = Math.floor(Math.random() * 999999)
+    .toString()
+    .padStart(6, "0");
+  return `CMD-${num}`;
+};
+
+const enviarComando = async (
+  comando: object,
+): Promise<{ ok: boolean; command_id: string }> => {
+  const command_id = generarCommandId();
+  const expires_at = new Date(Date.now() + 30000).toISOString();
+
   try {
     const url =
       (await getConfigValue("tinkerboard_url")) ??
@@ -13,22 +25,29 @@ const enviarComando = async (comando: object): Promise<boolean> => {
     const timeout = parseInt(
       (await getConfigValue("tinkerboard_timeout")) ?? "5000",
     );
+    const apiKey = process.env.TINKER_API_KEY ?? "malima-tinker-2026";
+
+    const payload = { command_id, expires_at, ...comando };
 
     const response = await fetch(`${url}${endpoint}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(comando),
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+      },
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeout),
     });
-    return response.ok;
+
+    return { ok: response.ok, command_id };
   } catch (error) {
     console.error("Error enviando comando a TinkerBoard:", error);
-    return false;
+    return { ok: false, command_id };
   }
 };
 
-// Registra el evento en la base de datos
 const registrarEvento = async (
+  command_id: string,
   invernadero_id: number,
   accion: string,
   modo_origen: string,
@@ -37,9 +56,10 @@ const registrarEvento = async (
   detalle?: string,
 ) => {
   await pool.query(
-    `INSERT INTO eventos_control (invernadero_id, accion, modo_origen, usuario_id, resultado, detalle)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO eventos_control (id, invernadero_id, accion, modo_origen, usuario_id, resultado, detalle)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
+      command_id,
       invernadero_id,
       accion,
       modo_origen,
@@ -51,7 +71,6 @@ const registrarEvento = async (
 };
 
 // POST /api/control/invernadero/:id
-// Envía comando a un invernadero individual
 export const controlarInvernadero = async (
   req: Request,
   res: Response,
@@ -61,14 +80,15 @@ export const controlarInvernadero = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res.status(400).json({
-        ok: false,
-        mensaje: "accion debe ser: abrir, cerrar o detener",
-      });
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "accion debe ser: abrir, cerrar o detener",
+        });
       return;
     }
 
-    // Verificar que el invernadero existe y está en modo remoto o automático
     const inv = await pool.query(
       `SELECT i.*, m.id as motor_id, m.variador_id
        FROM invernaderos i
@@ -85,15 +105,16 @@ export const controlarInvernadero = async (
     const invernadero = inv.rows[0];
 
     if (invernadero.modo === "local") {
-      res.status(409).json({
-        ok: false,
-        mensaje:
-          "El invernadero está en modo local. Cambia el modo desde el tablero.",
-      });
+      res
+        .status(409)
+        .json({
+          ok: false,
+          mensaje:
+            "El invernadero está en modo local. Cambia el modo desde el tablero.",
+        });
       return;
     }
 
-    // Enviar comando a la TinkerBoard
     const comando = {
       invernadero_id: Number(id),
       motor_id: invernadero.motor_id,
@@ -101,23 +122,25 @@ export const controlarInvernadero = async (
       accion,
     };
 
-    const enviado = await enviarComando(comando);
+    const { ok, command_id } = await enviarComando(comando);
 
-    // Registrar evento
     await registrarEvento(
+      command_id,
       Number(id),
       accion,
       modo_origen,
       usuario_id,
-      enviado ? "exitoso" : "fallido",
-      enviado ? undefined : "No se pudo comunicar con la TinkerBoard",
+      ok ? "exitoso" : "fallido",
+      ok ? undefined : "No se pudo comunicar con la TinkerBoard",
     );
 
-    if (!enviado) {
-      res.status(502).json({
-        ok: false,
-        mensaje: "No se pudo comunicar con la TinkerBoard",
-      });
+    if (!ok) {
+      res
+        .status(502)
+        .json({
+          ok: false,
+          mensaje: "No se pudo comunicar con la TinkerBoard",
+        });
       return;
     }
 
@@ -131,7 +154,6 @@ export const controlarInvernadero = async (
 };
 
 // POST /api/control/zona/:zona_id
-// Envía el mismo comando a todos los invernaderos de una zona
 export const controlarZona = async (
   req: Request,
   res: Response,
@@ -141,10 +163,12 @@ export const controlarZona = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res.status(400).json({
-        ok: false,
-        mensaje: "accion debe ser: abrir, cerrar o detener",
-      });
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "accion debe ser: abrir, cerrar o detener",
+        });
       return;
     }
 
@@ -157,10 +181,12 @@ export const controlarZona = async (
     );
 
     if (invernaderos.rows.length === 0) {
-      res.status(404).json({
-        ok: false,
-        mensaje: "No hay invernaderos disponibles en esta zona",
-      });
+      res
+        .status(404)
+        .json({
+          ok: false,
+          mensaje: "No hay invernaderos disponibles en esta zona",
+        });
       return;
     }
 
@@ -173,21 +199,22 @@ export const controlarZona = async (
           accion,
         };
 
-        const enviado = await enviarComando(comando);
+        const { ok, command_id } = await enviarComando(comando);
 
         await registrarEvento(
+          command_id,
           inv.id,
           accion,
           modo_origen,
           usuario_id,
-          enviado ? "exitoso" : "fallido",
-          enviado ? undefined : "No se pudo comunicar con la TinkerBoard",
+          ok ? "exitoso" : "fallido",
+          ok ? undefined : "No se pudo comunicar con la TinkerBoard",
         );
 
         return {
           invernadero_id: inv.id,
           nombre: inv.nombre,
-          resultado: enviado ? "exitoso" : "fallido",
+          resultado: ok ? "exitoso" : "fallido",
         };
       }),
     );
@@ -200,7 +227,6 @@ export const controlarZona = async (
 };
 
 // PATCH /api/control/invernadero/:id/modo
-// Cambia el modo de un invernadero (local, remoto, automatico)
 export const cambiarModo = async (
   req: Request,
   res: Response,
@@ -210,10 +236,12 @@ export const cambiarModo = async (
     const { modo } = req.body;
 
     if (!modo || !["local", "remoto", "automatico"].includes(modo)) {
-      res.status(400).json({
-        ok: false,
-        mensaje: "modo debe ser: local, remoto o automatico",
-      });
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "modo debe ser: local, remoto o automatico",
+        });
       return;
     }
 
@@ -221,7 +249,6 @@ export const cambiarModo = async (
       modo,
       id,
     ]);
-
     res.status(200).json({ ok: true, mensaje: `Modo cambiado a '${modo}'` });
   } catch (error) {
     console.error("Error cambiando modo:", error);
