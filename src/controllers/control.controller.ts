@@ -11,6 +11,7 @@ const generarCommandId = () => {
 
 const enviarComando = async (
   comando: object,
+  tipo: "movimiento_individual" | "cambio_modo" = "movimiento_individual",
 ): Promise<{ ok: boolean; command_id: string }> => {
   const command_id = generarCommandId();
   const expires_at = new Date(Date.now() + 30000).toISOString();
@@ -27,7 +28,12 @@ const enviarComando = async (
     );
     const apiKey = process.env.TINKER_API_KEY ?? "malima-tinker-2026";
 
-    const payload = { command_id, expires_at, ...comando };
+    const payload = {
+      command_id,
+      tipo,
+      expires_at,
+      ...comando,
+    };
 
     const response = await fetch(`${url}${endpoint}`, {
       method: "POST",
@@ -80,12 +86,10 @@ export const controlarInvernadero = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "accion debe ser: abrir, cerrar o detener",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "accion debe ser: abrir, cerrar o detener",
+      });
       return;
     }
 
@@ -105,13 +109,11 @@ export const controlarInvernadero = async (
     const invernadero = inv.rows[0];
 
     if (invernadero.modo === "local") {
-      res
-        .status(409)
-        .json({
-          ok: false,
-          mensaje:
-            "El invernadero está en modo local. Cambia el modo desde el tablero.",
-        });
+      res.status(409).json({
+        ok: false,
+        mensaje:
+          "El invernadero está en modo local. Cambia el modo desde el tablero.",
+      });
       return;
     }
 
@@ -122,7 +124,10 @@ export const controlarInvernadero = async (
       accion,
     };
 
-    const { ok, command_id } = await enviarComando(comando);
+    const { ok, command_id } = await enviarComando(
+      comando,
+      "movimiento_individual",
+    );
 
     await registrarEvento(
       command_id,
@@ -135,12 +140,10 @@ export const controlarInvernadero = async (
     );
 
     if (!ok) {
-      res
-        .status(502)
-        .json({
-          ok: false,
-          mensaje: "No se pudo comunicar con la TinkerBoard",
-        });
+      res.status(502).json({
+        ok: false,
+        mensaje: "No se pudo comunicar con la TinkerBoard",
+      });
       return;
     }
 
@@ -163,12 +166,10 @@ export const controlarZona = async (
     const { accion, modo_origen = "remoto", usuario_id = null } = req.body;
 
     if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "accion debe ser: abrir, cerrar o detener",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "accion debe ser: abrir, cerrar o detener",
+      });
       return;
     }
 
@@ -181,12 +182,10 @@ export const controlarZona = async (
     );
 
     if (invernaderos.rows.length === 0) {
-      res
-        .status(404)
-        .json({
-          ok: false,
-          mensaje: "No hay invernaderos disponibles en esta zona",
-        });
+      res.status(404).json({
+        ok: false,
+        mensaje: "No hay invernaderos disponibles en esta zona",
+      });
       return;
     }
 
@@ -245,10 +244,34 @@ export const cambiarModo = async (
       return;
     }
 
+    // Obtener grupo_id y plc_id del invernadero
+    const inv = await pool.query(
+      `SELECT grupo_id, zona_id FROM invernaderos WHERE id = $1`,
+      [id],
+    );
+
+    if (inv.rows.length === 0) {
+      res.status(404).json({ ok: false, mensaje: "Invernadero no encontrado" });
+      return;
+    }
+
+    const { grupo_id, zona_id } = inv.rows[0];
+
+    // Actualizar modo en la DB
     await pool.query(`UPDATE invernaderos SET modo = $1 WHERE id = $2`, [
       modo,
       id,
     ]);
+
+    // Enviar cambio de modo a la TinkerBoard
+    const comando = {
+      plc_id: 1,
+      grupo_id: grupo_id ?? 1,
+      modo,
+    };
+
+    await enviarComando(comando, "cambio_modo");
+
     res.status(200).json({ ok: true, mensaje: `Modo cambiado a '${modo}'` });
   } catch (error) {
     console.error("Error cambiando modo:", error);

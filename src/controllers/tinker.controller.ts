@@ -2,7 +2,6 @@ import { Request, Response } from "express";
 import pool from "../config/db";
 
 // POST /api/tinker/datos
-// Recibe datos del sensor meteorológico y estado de variadores desde la TinkerBoard
 export const recibirDatos = async (
   req: Request,
   res: Response,
@@ -15,7 +14,7 @@ export const recibirDatos = async (
       zona_id,
       temperatura,
       humedad,
-      velocidad_viento,
+      velocidad_viento_ms,
       radiacion_solar,
       probabilidad_lluvia,
       variadores,
@@ -28,7 +27,12 @@ export const recibirDatos = async (
       return;
     }
 
-    // Guardar datos meteorológicos
+    // Convertir m/s a km/h para almacenamiento
+    const velocidad_viento_kmh =
+      velocidad_viento_ms != null
+        ? Math.round(velocidad_viento_ms * 3.6 * 100) / 100
+        : null;
+
     await pool.query(
       `INSERT INTO datos_meteorologicos
         (zona_id, temperatura, humedad, velocidad_viento, radiacion_solar, probabilidad_lluvia)
@@ -37,13 +41,12 @@ export const recibirDatos = async (
         zona_id,
         temperatura,
         humedad,
-        velocidad_viento,
+        velocidad_viento_kmh,
         radiacion_solar,
         probabilidad_lluvia ?? null,
       ],
     );
 
-    // Actualizar estado de variadores si vienen en el payload
     if (variadores && Array.isArray(variadores)) {
       for (const v of variadores) {
         await pool.query(`UPDATE motores SET estado = $1 WHERE id = $2`, [
@@ -51,13 +54,10 @@ export const recibirDatos = async (
           v.variador_id,
         ]);
 
-        // Actualizar estado del invernadero según el variador
         const estadoInv =
           v.estado === "abriendo" || v.estado === "cerrando"
             ? "en_movimiento"
-            : v.estado === "detenido"
-              ? "cerrado"
-              : "cerrado";
+            : "cerrado";
 
         await pool.query(
           `UPDATE invernaderos SET estado = $1
@@ -68,7 +68,7 @@ export const recibirDatos = async (
     }
 
     console.log(
-      `📡 Datos recibidos — site: ${site_id}, device: ${device_id}, plc: ${plc_id}, zona: ${zona_id}`,
+      `📡 Telemetría recibida — site: ${site_id}, device: ${device_id}, plc: ${plc_id}, zona: ${zona_id}`,
     );
     res.status(200).json({ ok: true, mensaje: "Datos recibidos" });
   } catch (error) {
@@ -78,13 +78,21 @@ export const recibirDatos = async (
 };
 
 // POST /api/tinker/confirmacion
-// Recibe la confirmación de ejecución de un comando desde la TinkerBoard
 export const recibirConfirmacion = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
   try {
-    const { command_id, plc_id, variador_id, resultado, timestamp } = req.body;
+    const {
+      command_id,
+      plc_id,
+      variador_id,
+      resultado,
+      codigo_resultado,
+      detalle,
+      estado_real,
+      timestamp,
+    } = req.body;
 
     if (!command_id || !resultado) {
       res
@@ -93,20 +101,19 @@ export const recibirConfirmacion = async (
       return;
     }
 
-    // Actualizar el evento de control con el resultado
     await pool.query(
       `UPDATE eventos_control
        SET resultado = $1, detalle = $2
        WHERE id = $3`,
       [
         resultado === "ejecutado" ? "exitoso" : "fallido",
-        `Confirmación TinkerBoard: ${resultado} — plc_id: ${plc_id}, variador_id: ${variador_id}`,
+        `resultado: ${resultado}${codigo_resultado ? ` | codigo: ${codigo_resultado}` : ""}${detalle ? ` | detalle: ${detalle}` : ""}${estado_real ? ` | estado_real: ${estado_real}` : ""} | plc_id: ${plc_id}, variador_id: ${variador_id}`,
         command_id,
       ],
     );
 
     console.log(
-      `✅ Confirmación recibida — command_id: ${command_id}, resultado: ${resultado}`,
+      `✅ Confirmación recibida — command_id: ${command_id}, resultado: ${resultado}${codigo_resultado ? `, codigo: ${codigo_resultado}` : ""}`,
     );
     res.status(200).json({ ok: true, mensaje: "Confirmación recibida" });
   } catch (error) {
