@@ -158,3 +158,27 @@ export const obtenerUltimoEstado = async (
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
   }
 };
+
+// GET /api/meteorologia/historial/:zona_id
+export const obtenerHistorial = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { zona_id } = req.params;
+    const limit = req.query.limit ?? 20;
+
+    const result = await pool.query(
+      `SELECT * FROM datos_meteorologicos
+       WHERE zona_id = $1
+       ORDER BY registrado_at DESC
+       LIMIT $2`,
+      [zona_id, limit],
+    );
+
+    res.status(200).json({ ok: true, data: result.rows });
+  } catch (error) {
+    console.error("Error obteniendo historial:", error);
+    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+  }
+};

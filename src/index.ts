@@ -8,7 +8,8 @@ import tinkerRoutes from "./routes/tinker.routes";
 import controlRoutes from "./routes/control.routes";
 import automatizacionRoutes from "./routes/automatizacion.routes";
 import configuracionRoutes from "./routes/configuracion.routes";
-import usuariosRoutes from './routes/usuarios.routes';
+import usuariosRoutes from "./routes/usuarios.routes";
+import meteorologiaRoutes from "./routes/meteorologia.routes";
 
 dotenv.config();
 
@@ -23,7 +24,8 @@ app.use("/api/automatizacion", automatizacionRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/zonas", zonasRoutes);
 app.use("/api/configuracion", configuracionRoutes);
-app.use('/api/usuarios', usuariosRoutes);
+app.use("/api/usuarios", usuariosRoutes);
+app.use("/api/meteorologia", meteorologiaRoutes);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", project: "Malima Backend", version: "1.0.0" });
