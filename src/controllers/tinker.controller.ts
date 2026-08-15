@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
+import { io } from "../index";
 
 // POST /api/tinker/datos
 export const recibirDatos = async (
@@ -70,6 +71,18 @@ export const recibirDatos = async (
     console.log(
       `📡 Telemetría recibida — site: ${site_id}, device: ${device_id}, plc: ${plc_id}, zona: ${zona_id}`,
     );
+    // Emitir a todos los clientes de esa zona
+    io.to(`zona-${zona_id}`).emit("estado-actualizado", {
+      zona_id,
+      variadores,
+      meteorologia: {
+        temperatura,
+        humedad,
+        velocidad_viento_ms,
+        radiacion_solar,
+        probabilidad_lluvia,
+      },
+    });
     res.status(200).json({ ok: true, mensaje: "Datos recibidos" });
   } catch (error) {
     console.error("Error recibiendo datos de TinkerBoard:", error);

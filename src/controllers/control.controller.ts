@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
 import { getConfigValue } from "./configuracion.controller";
+import { io } from "../index";
 
 const generarCommandId = () => {
   const num = Math.floor(Math.random() * 999999)
@@ -139,6 +140,12 @@ export const controlarInvernadero = async (
       ok ? undefined : "No se pudo comunicar con la TinkerBoard",
     );
 
+    io.to(`zona-${invernadero.zona_id}`).emit("comando-enviado", {
+      invernadero_id: Number(id),
+      accion,
+      resultado: ok ? "exitoso" : "fallido",
+    });
+
     if (!ok) {
       res.status(502).json({
         ok: false,
@@ -235,12 +242,10 @@ export const cambiarModo = async (
     const { modo } = req.body;
 
     if (!modo || !["local", "remoto", "automatico"].includes(modo)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "modo debe ser: local, remoto o automatico",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "modo debe ser: local, remoto o automatico",
+      });
       return;
     }
 
