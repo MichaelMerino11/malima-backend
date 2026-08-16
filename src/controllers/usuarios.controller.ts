@@ -70,15 +70,16 @@ export const actualizarPerfil = async (
   res: Response,
 ): Promise<void> => {
   try {
-    const { nombre, email } = req.body;
+    const { nombre, email, avatar_url } = req.body;
     const id = req.usuario?.id;
 
     await pool.query(
       `UPDATE usuarios SET
         nombre = COALESCE($1, nombre),
-        email = COALESCE($2, email)
-       WHERE id = $3`,
-      [nombre, email, id],
+        email = COALESCE($2, email),
+        avatar_url = COALESCE($3, avatar_url)
+       WHERE id = $4`,
+      [nombre, email, avatar_url, id],
     );
 
     res.status(200).json({ ok: true, mensaje: "Perfil actualizado" });
@@ -98,12 +99,10 @@ export const cambiarPassword = async (
     const id = req.usuario?.id;
 
     if (!password_actual || !password_nuevo) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "password_actual y password_nuevo son requeridos",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "password_actual y password_nuevo son requeridos",
+      });
       return;
     }
 
@@ -158,12 +157,10 @@ export const solicitarReset = async (
 
     // Siempre responder ok para no revelar si el email existe
     if (result.rows.length === 0) {
-      res
-        .status(200)
-        .json({
-          ok: true,
-          mensaje: "Si el correo existe, recibirás un enlace en breve",
-        });
+      res.status(200).json({
+        ok: true,
+        mensaje: "Si el correo existe, recibirás un enlace en breve",
+      });
       return;
     }
 
@@ -178,12 +175,10 @@ export const solicitarReset = async (
 
     await enviarCorreoRestablecimiento(email, usuario.nombre, token);
 
-    res
-      .status(200)
-      .json({
-        ok: true,
-        mensaje: "Si el correo existe, recibirás un enlace en breve",
-      });
+    res.status(200).json({
+      ok: true,
+      mensaje: "Si el correo existe, recibirás un enlace en breve",
+    });
   } catch (error) {
     console.error("Error solicitando reset:", error);
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });

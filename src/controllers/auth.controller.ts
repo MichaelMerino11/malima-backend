@@ -19,8 +19,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     }
 
     const result = await pool.query(
-      `SELECT * FROM usuarios WHERE email = $1 AND activo = true`,
-      [email],
+      `SELECT id, nombre, email, rol, avatar_url, created_at FROM usuarios WHERE id = $1`,
+      [req.usuario?.id],
     );
 
     if (result.rows.length === 0) {
@@ -67,12 +67,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const { nombre, email, password, rol = "operador" } = req.body;
 
     if (!nombre || !email || !password) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "Nombre, email y password son requeridos",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "Nombre, email y password son requeridos",
+      });
       return;
     }
 
