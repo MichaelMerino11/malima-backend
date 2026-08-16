@@ -106,7 +106,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 export const me = async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await pool.query(
-      `SELECT id, nombre, email, rol, created_at FROM usuarios WHERE id = $1`,
+      `SELECT id, nombre, email, rol, avatar_url, created_at FROM usuarios WHERE id = $1`,
       [req.usuario?.id],
     );
 
