@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
+import { getConfigValue } from "./configuracion.controller";
 
 // ─── Umbrales por defecto ───
 const UMBRALES_DEFAULT = {
@@ -18,9 +19,14 @@ const decidirAccion = (
     radiacion_solar: number;
     probabilidad_lluvia: number;
   },
-  umbrales = UMBRALES_DEFAULT,
+  umbrales: {
+    temperatura_max: number;
+    velocidad_viento_max: number;
+    probabilidad_lluvia_min: number;
+    humedad_max: number;
+    radiacion_min?: number;
+  },
 ): { accion: "abrir" | "cerrar"; motivo: string } => {
-  // Prioridad 1: lluvia inminente → cerrar siempre
   if (datos.probabilidad_lluvia >= umbrales.probabilidad_lluvia_min) {
     return {
       accion: "cerrar",
@@ -28,7 +34,6 @@ const decidirAccion = (
     };
   }
 
-  // Prioridad 2: viento fuerte → cerrar
   if (datos.velocidad_viento >= umbrales.velocidad_viento_max) {
     return {
       accion: "cerrar",
@@ -36,7 +41,6 @@ const decidirAccion = (
     };
   }
 
-  // Prioridad 3: temperatura muy alta → cerrar para proteger
   if (datos.temperatura >= umbrales.temperatura_max) {
     return {
       accion: "cerrar",
@@ -44,18 +48,23 @@ const decidirAccion = (
     };
   }
 
-  // Condiciones favorables → abrir
-  if (datos.radiacion_solar >= umbrales.radiacion_min) {
+  if (datos.humedad >= umbrales.humedad_max) {
+    return {
+      accion: "cerrar",
+      motivo: `Humedad ${datos.humedad}% supera el umbral de ${umbrales.humedad_max}%`,
+    };
+  }
+
+  if (datos.radiacion_solar >= (umbrales.radiacion_min ?? 100)) {
     return {
       accion: "abrir",
       motivo: `Condiciones favorables — radiación ${datos.radiacion_solar} W/m², sin riesgos detectados`,
     };
   }
 
-  // Por defecto: cerrar (safe state)
   return {
     accion: "cerrar",
-    motivo: "Radiación insuficiente — manteniendo invernaderos cerrados",
+    motivo: "Radiación insuficiente — manteniendo galpones cerrados",
   };
 };
 
@@ -67,8 +76,8 @@ export const evaluarZona = async (
 ): Promise<void> => {
   try {
     const { zona_id } = req.params;
+    const umbrales = await obtenerUmbrales();
 
-    // Obtener último dato meteorológico de la zona
     const meteoResult = await pool.query(
       `SELECT * FROM datos_meteorologicos
        WHERE zona_id = $1
@@ -78,19 +87,16 @@ export const evaluarZona = async (
     );
 
     if (meteoResult.rows.length === 0) {
-      res
-        .status(404)
-        .json({
-          ok: false,
-          mensaje: "No hay datos meteorológicos para esta zona",
-        });
+      res.status(404).json({
+        ok: false,
+        mensaje: "No hay datos meteorológicos para esta zona",
+      });
       return;
     }
 
     const datos = meteoResult.rows[0];
-    const { accion, motivo } = decidirAccion(datos);
+    const { accion, motivo } = decidirAccion(datos, umbrales);
 
-    // Obtener invernaderos en modo automático de esta zona
     const invResult = await pool.query(
       `SELECT i.*, m.id as motor_id, m.variador_id
        FROM invernaderos i
@@ -102,13 +108,12 @@ export const evaluarZona = async (
     if (invResult.rows.length === 0) {
       res.status(200).json({
         ok: true,
-        mensaje: "No hay invernaderos en modo automático en esta zona",
+        mensaje: "No hay galpones en modo automático en esta zona",
         decision: { accion, motivo },
       });
       return;
     }
 
-    // Enviar comando a cada invernadero en modo automático
     const TINKERBOARD_URL =
       process.env.TINKERBOARD_URL ?? "http://192.168.1.100";
     const resultados = await Promise.all(
@@ -149,11 +154,9 @@ export const evaluarZona = async (
       }),
     );
 
-    res.status(200).json({
-      ok: true,
-      decision: { accion, motivo },
-      resultados,
-    });
+    res
+      .status(200)
+      .json({ ok: true, decision: { accion, motivo }, resultados });
   } catch (error) {
     console.error("Error evaluando zona:", error);
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
@@ -162,11 +165,18 @@ export const evaluarZona = async (
 
 // GET /api/automatizacion/umbrales
 // Retorna los umbrales actuales
-export const obtenerUmbrales = async (
-  req: Request,
-  res: Response,
-): Promise<void> => {
-  res.status(200).json({ ok: true, data: UMBRALES_DEFAULT });
+const obtenerUmbrales = async () => {
+  const temp = await getConfigValue("umbral_temperatura_max");
+  const viento = await getConfigValue("umbral_viento_max");
+  const lluvia = await getConfigValue("umbral_lluvia_min");
+  const humedad = await getConfigValue("umbral_humedad_max");
+
+  return {
+    temperatura_max: Number(temp ?? 35),
+    velocidad_viento_max: Number(viento ?? 40),
+    probabilidad_lluvia_min: Number(lluvia ?? 60),
+    humedad_max: Number(humedad ?? 85),
+  };
 };
 
 // POST /api/automatizacion/evaluar-todas
@@ -177,6 +187,7 @@ export const evaluarTodasLasZonas = async (
 ): Promise<void> => {
   try {
     const zonas = await pool.query(`SELECT id FROM zonas WHERE activa = true`);
+    const umbrales = await obtenerUmbrales();
 
     const resultados = await Promise.all(
       zonas.rows.map(async (zona) => {
@@ -192,7 +203,7 @@ export const evaluarTodasLasZonas = async (
           return { zona_id: zona.id, mensaje: "Sin datos meteorológicos" };
         }
 
-        const { accion, motivo } = decidirAccion(meteo.rows[0]);
+        const { accion, motivo } = decidirAccion(meteo.rows[0], umbrales);
         return { zona_id: zona.id, accion, motivo };
       }),
     );

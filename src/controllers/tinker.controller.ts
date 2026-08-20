@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
 import { io } from "../index";
+import { registrarAlarma } from "./alarmas.controller";
+import { getConfigValue } from "./configuracion.controller";
 
 // POST /api/tinker/datos
 export const recibirDatos = async (
@@ -83,6 +85,53 @@ export const recibirDatos = async (
         probabilidad_lluvia,
       },
     });
+
+    // Verificar umbrales y registrar alarmas
+    const tempMax = Number(
+      (await getConfigValue("umbral_temperatura_max")) ?? 35,
+    );
+    const vientoMax = Number((await getConfigValue("umbral_viento_max")) ?? 40);
+    const lluviaMin = Number((await getConfigValue("umbral_lluvia_min")) ?? 60);
+    const humedadMax = Number(
+      (await getConfigValue("umbral_humedad_max")) ?? 85,
+    );
+
+    if (temperatura > tempMax) {
+      await registrarAlarma(
+        zona_id,
+        "temperatura_alta",
+        `Temperatura ${temperatura}°C supera el umbral de ${tempMax}°C`,
+        temperatura,
+        tempMax,
+      );
+    }
+    if (velocidad_viento_ms * 3.6 > vientoMax) {
+      await registrarAlarma(
+        zona_id,
+        "viento_fuerte",
+        `Viento ${(velocidad_viento_ms * 3.6).toFixed(1)} km/h supera el umbral de ${vientoMax} km/h`,
+        velocidad_viento_ms * 3.6,
+        vientoMax,
+      );
+    }
+    if ((probabilidad_lluvia ?? 0) > lluviaMin) {
+      await registrarAlarma(
+        zona_id,
+        "lluvia_inminente",
+        `Probabilidad de lluvia ${probabilidad_lluvia}% supera el umbral de ${lluviaMin}%`,
+        probabilidad_lluvia,
+        lluviaMin,
+      );
+    }
+    if (humedad > humedadMax) {
+      await registrarAlarma(
+        zona_id,
+        "humedad_alta",
+        `Humedad ${humedad}% supera el umbral de ${humedadMax}%`,
+        humedad,
+        humedadMax,
+      );
+    }
     res.status(200).json({ ok: true, mensaje: "Datos recibidos" });
   } catch (error) {
     console.error("Error recibiendo datos de TinkerBoard:", error);
