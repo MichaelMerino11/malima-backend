@@ -85,3 +85,26 @@ export const obtenerEventos = async (
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
   }
 };
+
+export const obtenerVariadores = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { zona_id } = req.params;
+
+    const result = await pool.query(
+      `SELECT m.*, i.nombre as galpon_nombre, i.estado as galpon_estado, i.modo, i.zona_id
+       FROM motores m
+       LEFT JOIN invernaderos i ON i.id = m.invernadero_id
+       WHERE i.zona_id = $1
+       ORDER BY m.id`,
+      [zona_id],
+    );
+
+    res.status(200).json({ ok: true, data: result.rows });
+  } catch (error) {
+    console.error("Error obteniendo variadores:", error);
+    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+  }
+};

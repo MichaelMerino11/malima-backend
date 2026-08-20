@@ -54,10 +54,12 @@ export const recibirDatos = async (
 
     if (variadores && Array.isArray(variadores)) {
       for (const v of variadores) {
-        await pool.query(`UPDATE motores SET estado = $1 WHERE id = $2`, [
-          v.estado,
-          v.variador_id,
-        ]);
+        await pool.query(
+          `UPDATE motores 
+       SET estado = $1, hz = $2, amperaje = $3
+       WHERE id = $4`,
+          [v.estado, v.hz ?? 0, v.amperaje ?? 0, v.variador_id],
+        );
 
         const estadoInv =
           v.estado === "abriendo" || v.estado === "cerrando"
@@ -66,7 +68,7 @@ export const recibirDatos = async (
 
         await pool.query(
           `UPDATE invernaderos SET estado = $1
-           WHERE id = (SELECT invernadero_id FROM motores WHERE id = $2)`,
+       WHERE id = (SELECT invernadero_id FROM motores WHERE id = $2)`,
           [estadoInv, v.variador_id],
         );
       }
