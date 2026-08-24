@@ -12,7 +12,10 @@ const generarCommandId = () => {
 
 const enviarComando = async (
   comando: object,
-  tipo: "movimiento_individual" | "cambio_modo" = "movimiento_individual",
+  tipo:
+    | "movimiento_individual"
+    | "cambio_modo"
+    | "movimiento_grupo" = "movimiento_individual",
 ): Promise<{ ok: boolean; command_id: string }> => {
   const command_id = generarCommandId();
   const expires_at = new Date(Date.now() + 30000).toISOString();
@@ -308,6 +311,71 @@ export const cambiarModo = async (
     res.status(200).json({ ok: true, mensaje: `Modo cambiado a '${modo}'` });
   } catch (error) {
     console.error("Error cambiando modo:", error);
+    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+  }
+};
+
+// POST /api/control/grupo/:grupo_id
+export const controlarGrupo = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { grupo_id } = req.params;
+    const { accion, usuario_id = null } = req.body;
+
+    if (!accion || !["abrir", "cerrar", "detener"].includes(accion)) {
+      res.status(400).json({
+        ok: false,
+        mensaje: "accion debe ser: abrir, cerrar o detener",
+      });
+      return;
+    }
+
+    const comando = {
+      plc_id: 1,
+      grupo_id: Number(grupo_id),
+      accion,
+    };
+
+    const { ok, command_id } = await enviarComando(
+      comando,
+      "movimiento_grupo" as any,
+    );
+
+    // Registrar evento por cada invernadero del grupo
+    const invernaderos = await pool.query(
+      `SELECT id FROM invernaderos WHERE grupo_id = $1 AND activo = true LIMIT 1`,
+      [grupo_id],
+    );
+
+    if (invernaderos.rows.length > 0) {
+      await registrarEvento(
+        command_id,
+        invernaderos.rows[0].id,
+        accion,
+        "remoto",
+        usuario_id,
+        ok ? "exitoso" : "fallido",
+        ok ? undefined : "No se pudo comunicar con la TinkerBoard",
+      );
+    }
+
+    if (!ok) {
+      res.status(502).json({
+        ok: false,
+        mensaje: "No se pudo comunicar con la TinkerBoard",
+      });
+      return;
+    }
+
+    res.status(200).json({
+      ok: true,
+      command_id,
+      mensaje: `Comando '${accion}' enviado al grupo ${grupo_id}`,
+    });
+  } catch (error) {
+    console.error("Error controlando grupo:", error);
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
   }
 };

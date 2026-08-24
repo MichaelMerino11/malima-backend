@@ -149,14 +149,19 @@ export const recibirConfirmacion = async (
   res: Response,
 ): Promise<void> => {
   try {
+    console.log("📨 Confirmación body:", JSON.stringify(req.body, null, 2));
+
     const {
       command_id,
       plc_id,
       variador_id,
+      grupo_id,
+      accion,
       resultado,
       codigo_resultado,
       detalle,
       estado_real,
+      miembros,
       timestamp,
     } = req.body;
 
@@ -167,23 +172,136 @@ export const recibirConfirmacion = async (
       return;
     }
 
+    const resultadosValidos = ["ejecutado", "fallido", "expirado", "parcial"];
+    if (!resultadosValidos.includes(resultado)) {
+      res.status(400).json({
+        ok: false,
+        mensaje: `resultado debe ser: ${resultadosValidos.join(", ")}`,
+      });
+      return;
+    }
+
+    // Construir detalle completo
+    let detalleCompleto = detalle ?? null;
+
+    if (miembros && Array.isArray(miembros) && miembros.length > 0) {
+      // Para movimiento_grupo incluir resumen de miembros en el detalle
+      const resumenMiembros = miembros
+        .map(
+          (m: any) =>
+            `V${m.variador_id}:${m.resultado}(${m.estado_real ?? "desconocido"})`,
+        )
+        .join(" | ");
+      detalleCompleto = `resultado: ${resultado} | grupo_id: ${grupo_id} | miembros: [${resumenMiembros}]`;
+    } else if (variador_id) {
+      detalleCompleto = `resultado: ${resultado} | codigo: ${codigo_resultado ?? "-"} | detalle: ${detalle ?? "-"} | estado_real: ${estado_real ?? "-"} | plc_id: ${plc_id}, variador_id: ${variador_id}`;
+    }
+
+    // Actualizar evento principal con resultado real de la confirmación
     await pool.query(
-      `UPDATE eventos_control
+      `UPDATE eventos_control 
        SET resultado = $1, detalle = $2
        WHERE id = $3`,
-      [
-        resultado === "ejecutado" ? "exitoso" : "fallido",
-        `resultado: ${resultado}${codigo_resultado ? ` | codigo: ${codigo_resultado}` : ""}${detalle ? ` | detalle: ${detalle}` : ""}${estado_real ? ` | estado_real: ${estado_real}` : ""} | plc_id: ${plc_id}, variador_id: ${variador_id}`,
-        command_id,
-      ],
+      [resultado, detalleCompleto, command_id],
     );
 
-    console.log(
-      `✅ Confirmación recibida — command_id: ${command_id}, resultado: ${resultado}${codigo_resultado ? `, codigo: ${codigo_resultado}` : ""}`,
-    );
-    res.status(200).json({ ok: true, mensaje: "Confirmación recibida" });
+    // Procesar miembros de movimiento_grupo
+    if (miembros && Array.isArray(miembros) && miembros.length > 0) {
+      for (const miembro of miembros) {
+        const {
+          variador_id: v_id,
+          resultado: v_resultado,
+          codigo_resultado: v_codigo,
+          detalle: v_detalle,
+          estado_real: v_estado,
+        } = miembro;
+
+        const motorResult = await pool.query(
+          `SELECT m.invernadero_id, i.zona_id
+           FROM motores m
+           JOIN invernaderos i ON i.id = m.invernadero_id
+           WHERE m.variador_id = $1
+           LIMIT 1`,
+          [String(v_id)],
+        );
+
+        if (motorResult.rows.length > 0) {
+          const { invernadero_id, zona_id } = motorResult.rows[0];
+
+          const estadoMotor = v_estado ?? "detenido";
+          await pool.query(
+            `UPDATE motores SET estado = $1 WHERE variador_id = $2`,
+            [estadoMotor, String(v_id)],
+          );
+
+          if (v_resultado === "ejecutado" && v_estado) {
+            const estadoInv =
+              v_estado === "abriendo" || v_estado === "cerrando"
+                ? "en_movimiento"
+                : v_estado === "abierto"
+                  ? "abierto"
+                  : "cerrado";
+
+            await pool.query(
+              `UPDATE invernaderos SET estado = $1 WHERE id = $2`,
+              [estadoInv, invernadero_id],
+            );
+          }
+
+          io.to(`zona-${zona_id}`).emit("estado-actualizado", {
+            zona_id,
+            command_id,
+            variador_id: v_id,
+            resultado: v_resultado,
+            estado_real: v_estado,
+          });
+        }
+      }
+    } else if (variador_id && estado_real) {
+      // Confirmación individual
+      const motorResult = await pool.query(
+        `SELECT m.invernadero_id, i.zona_id
+         FROM motores m
+         JOIN invernaderos i ON i.id = m.invernadero_id
+         WHERE m.variador_id = $1
+         LIMIT 1`,
+        [String(variador_id)],
+      );
+
+      if (motorResult.rows.length > 0) {
+        const { invernadero_id, zona_id } = motorResult.rows[0];
+
+        await pool.query(
+          `UPDATE motores SET estado = $1 WHERE variador_id = $2`,
+          [estado_real, String(variador_id)],
+        );
+
+        const estadoInv =
+          estado_real === "abriendo" || estado_real === "cerrando"
+            ? "en_movimiento"
+            : estado_real === "abierto"
+              ? "abierto"
+              : "cerrado";
+
+        await pool.query(`UPDATE invernaderos SET estado = $1 WHERE id = $2`, [
+          estadoInv,
+          invernadero_id,
+        ]);
+
+        io.to(`zona-${zona_id}`).emit("estado-actualizado", {
+          zona_id,
+          command_id,
+          variador_id,
+          resultado,
+          estado_real,
+        });
+      }
+    }
+
+    console.log(`✅ Confirmación procesada: ${command_id} → ${resultado}`);
+    res.status(200).json({ ok: true, mensaje: "Confirmación procesada" });
   } catch (error) {
-    console.error("Error recibiendo confirmación:", error);
+    console.error("Error procesando confirmación:", error);
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
   }
 };
