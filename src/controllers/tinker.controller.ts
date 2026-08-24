@@ -205,10 +205,15 @@ export const obtenerUltimoEstado = async (
     );
 
     const invernaderos = await pool.query(
-      `SELECT i.*, m.estado as estado_motor
-       FROM invernaderos i
-       LEFT JOIN motores m ON m.invernadero_id = i.id
-       WHERE i.zona_id = $1`,
+      `SELECT DISTINCT ON (i.id)
+     i.*,
+     m.estado as estado_motor,
+     m.hz,
+     m.amperaje
+   FROM invernaderos i
+   LEFT JOIN motores m ON m.invernadero_id = i.id
+   WHERE i.zona_id = $1
+   ORDER BY i.id, m.id`,
       [zona_id],
     );
 
