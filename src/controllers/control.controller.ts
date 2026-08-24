@@ -17,16 +17,17 @@ const enviarComando = async (
   const command_id = generarCommandId();
   const expires_at = new Date(Date.now() + 30000).toISOString();
 
+  let url = "http://192.168.1.100";
+  let endpoint = "/comando";
+
   try {
-    const url =
+    url =
       (await getConfigValue("tinkerboard_url")) ??
       process.env.TINKERBOARD_URL ??
       "http://192.168.1.100";
-    const endpoint =
+    endpoint =
       (await getConfigValue("tinkerboard_endpoint_comando")) ?? "/comando";
-    const timeout = parseInt(
-      (await getConfigValue("tinkerboard_timeout")) ?? "5000",
-    );
+    const timeout = 15000;
     const apiKey = process.env.TINKER_API_KEY ?? "malima-tinker-2026";
 
     const payload = {
@@ -35,6 +36,9 @@ const enviarComando = async (
       expires_at,
       ...comando,
     };
+
+    console.log("Enviando comando a TinkerBoard:", JSON.stringify(payload));
+    console.log("URL:", `${url}${endpoint}`);
 
     const response = await fetch(`${url}${endpoint}`, {
       method: "POST",
@@ -46,9 +50,16 @@ const enviarComando = async (
       signal: AbortSignal.timeout(timeout),
     });
 
+    console.log("Respuesta TinkerBoard status:", response.status);
+    const responseBody = await response.text();
+    console.log("Respuesta TinkerBoard body:", responseBody);
+
     return { ok: response.ok, command_id };
   } catch (error) {
     console.error("Error enviando comando a TinkerBoard:", error);
+    console.error("URL intentada:", `${url}${endpoint}`);
+    console.error("Tipo de error:", (error as any)?.name);
+    console.error("Mensaje:", (error as any)?.message);
     return { ok: false, command_id };
   }
 };
@@ -119,9 +130,10 @@ export const controlarInvernadero = async (
     }
 
     const comando = {
+      plc_id: 1,
       invernadero_id: Number(id),
       motor_id: invernadero.motor_id,
-      variador_id: invernadero.variador_id,
+      variador_id: Number(invernadero.variador_id),
       accion,
     };
 
@@ -239,7 +251,7 @@ export const cambiarModo = async (
 ): Promise<void> => {
   try {
     const { id } = req.params;
-    const { modo } = req.body;
+    const { modo, usuario_id = null } = req.body;
 
     if (!modo || !["local", "remoto", "automatico"].includes(modo)) {
       res.status(400).json({
@@ -249,7 +261,6 @@ export const cambiarModo = async (
       return;
     }
 
-    // Obtener grupo_id y plc_id del invernadero
     const inv = await pool.query(
       `SELECT grupo_id, zona_id FROM invernaderos WHERE id = $1`,
       [id],
@@ -262,20 +273,37 @@ export const cambiarModo = async (
 
     const { grupo_id, zona_id } = inv.rows[0];
 
-    // Actualizar modo en la DB
     await pool.query(`UPDATE invernaderos SET modo = $1 WHERE id = $2`, [
       modo,
       id,
     ]);
 
-    // Enviar cambio de modo a la TinkerBoard
     const comando = {
       plc_id: 1,
       grupo_id: grupo_id ?? 1,
       modo,
     };
 
-    await enviarComando(comando, "cambio_modo");
+    const { ok, command_id } = await enviarComando(comando, "cambio_modo");
+
+    // Registrar evento
+    await registrarEvento(
+      command_id,
+      Number(id),
+      `cambio_modo_${modo}`,
+      "remoto",
+      usuario_id,
+      ok ? "exitoso" : "fallido",
+      ok
+        ? `Modo cambiado a ${modo}`
+        : "No se pudo comunicar con la TinkerBoard",
+    );
+
+    io.to(`zona-${zona_id}`).emit("comando-enviado", {
+      invernadero_id: Number(id),
+      accion: `cambio_modo_${modo}`,
+      resultado: ok ? "exitoso" : "fallido",
+    });
 
     res.status(200).json({ ok: true, mensaje: `Modo cambiado a '${modo}'` });
   } catch (error) {
