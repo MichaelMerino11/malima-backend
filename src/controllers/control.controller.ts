@@ -293,7 +293,7 @@ export const cambiarModo = async (
     await registrarEvento(
       command_id,
       Number(id),
-      `cambio_modo_${modo}`,
+      "cambio_modo",
       "remoto",
       usuario_id,
       ok ? "exitoso" : "fallido",

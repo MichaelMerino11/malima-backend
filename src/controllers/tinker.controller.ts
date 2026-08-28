@@ -206,29 +206,28 @@ export const recibirConfirmacion = async (
     );
 
     // Procesar miembros de movimiento_grupo
+    // Procesar según tipo de confirmación
     if (miembros && Array.isArray(miembros) && miembros.length > 0) {
+      // movimiento_grupo con miembros
       for (const miembro of miembros) {
         const {
           variador_id: v_id,
           resultado: v_resultado,
-          codigo_resultado: v_codigo,
-          detalle: v_detalle,
           estado_real: v_estado,
         } = miembro;
 
         const motorResult = await pool.query(
           `SELECT m.invernadero_id, i.zona_id
-           FROM motores m
-           JOIN invernaderos i ON i.id = m.invernadero_id
-           WHERE m.variador_id = $1
-           LIMIT 1`,
+       FROM motores m
+       JOIN invernaderos i ON i.id = m.invernadero_id
+       WHERE m.variador_id = $1 LIMIT 1`,
           [String(v_id)],
         );
 
         if (motorResult.rows.length > 0) {
           const { invernadero_id, zona_id } = motorResult.rows[0];
-
           const estadoMotor = v_estado ?? "detenido";
+
           await pool.query(
             `UPDATE motores SET estado = $1 WHERE variador_id = $2`,
             [estadoMotor, String(v_id)],
@@ -257,14 +256,21 @@ export const recibirConfirmacion = async (
           });
         }
       }
+    } else if (grupo_id && !variador_id) {
+      // cambio_modo de grupo
+      const modoReal = req.body.modo_real ?? req.body.modo ?? "remoto";
+      await pool.query(
+        `UPDATE invernaderos SET modo = $1 WHERE grupo_id = $2`,
+        [modoReal, grupo_id],
+      );
+      console.log(`✅ Modo cambiado en grupo ${grupo_id} → ${modoReal}`);
     } else if (variador_id && estado_real) {
-      // Confirmación individual
+      // movimiento_individual
       const motorResult = await pool.query(
         `SELECT m.invernadero_id, i.zona_id
-         FROM motores m
-         JOIN invernaderos i ON i.id = m.invernadero_id
-         WHERE m.variador_id = $1
-         LIMIT 1`,
+     FROM motores m
+     JOIN invernaderos i ON i.id = m.invernadero_id
+     WHERE m.variador_id = $1 LIMIT 1`,
         [String(variador_id)],
       );
 
