@@ -379,3 +379,105 @@ export const controlarGrupo = async (
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
   }
 };
+
+// POST /api/control/meteorologia
+export const configurarMeteorologica = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { usuario_id = null } = req.body;
+    const lluvia_umbral_raw = Number(req.body.lluvia_umbral_raw);
+    const tiempo_confirmacion_lluvia_s = Number(
+      req.body.tiempo_confirmacion_lluvia_s,
+    );
+    const tiempo_seco_reapertura_s = Number(req.body.tiempo_seco_reapertura_s);
+
+    // Validar rangos
+    if (
+      !lluvia_umbral_raw ||
+      lluvia_umbral_raw < 1 ||
+      lluvia_umbral_raw > 32766
+    ) {
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "lluvia_umbral_raw debe ser entero 1..32766",
+        });
+      return;
+    }
+    if (
+      !tiempo_confirmacion_lluvia_s ||
+      tiempo_confirmacion_lluvia_s < 1 ||
+      tiempo_confirmacion_lluvia_s > 9999
+    ) {
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "tiempo_confirmacion_lluvia_s debe ser entero 1..9999",
+        });
+      return;
+    }
+    if (
+      !tiempo_seco_reapertura_s ||
+      tiempo_seco_reapertura_s < 1 ||
+      tiempo_seco_reapertura_s > 9999
+    ) {
+      res
+        .status(400)
+        .json({
+          ok: false,
+          mensaje: "tiempo_seco_reapertura_s debe ser entero 1..9999",
+        });
+      return;
+    }
+
+    const comando = {
+      plc_id: 1,
+      lluvia_umbral_raw,
+      tiempo_confirmacion_lluvia_s,
+      tiempo_seco_reapertura_s,
+    };
+
+    const { ok, command_id } = await enviarComando(
+      comando,
+      "configuracion_meteorologica" as any,
+    );
+
+    // Registrar en eventos_control usando invernadero_id=1 como referencia
+    await registrarEvento(
+      command_id,
+      1,
+      "configuracion_meteorologica",
+      "remoto",
+      usuario_id,
+      ok ? "exitoso" : "fallido",
+      ok
+        ? `lluvia_umbral_raw=${lluvia_umbral_raw}`
+        : "No se pudo comunicar con la TinkerBoard",
+    );
+
+    if (!ok) {
+      res
+        .status(502)
+        .json({
+          ok: false,
+          mensaje: "No se pudo comunicar con la TinkerBoard",
+        });
+      return;
+    }
+
+    res
+      .status(200)
+      .json({
+        ok: true,
+        command_id,
+        mensaje: "Configuración meteorológica enviada",
+      });
+  } catch (error) {
+    console.error("Error configurando meteorología:", error);
+    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+  }
+};

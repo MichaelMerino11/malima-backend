@@ -6,12 +6,14 @@ import {
   controlarGrupo,
 } from "../controllers/control.controller";
 import { verificarToken } from "../middlewares/auth.middleware";
+import { configurarMeteorologica } from "../controllers/control.controller";
 
 const router = Router();
 
 router.post("/invernadero/:id", controlarInvernadero);
 router.post("/zona/:zona_id", controlarZona);
 router.patch("/invernadero/:id/modo", cambiarModo);
-router.post('/grupo/:grupo_id', verificarToken, controlarGrupo);
+router.post("/grupo/:grupo_id", verificarToken, controlarGrupo);
+router.post("/meteorologia", configurarMeteorologica);
 
 export default router;
