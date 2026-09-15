@@ -233,17 +233,10 @@ export const recibirConfirmacion = async (
             [estadoMotor, String(v_id)],
           );
 
-          if (v_resultado === "ejecutado" && v_estado) {
-            const estadoInv =
-              v_estado === "abriendo" || v_estado === "cerrando"
-                ? "en_movimiento"
-                : v_estado === "abierto"
-                  ? "abierto"
-                  : "cerrado";
-
+          if (v_resultado === "ejecutado") {
             await pool.query(
-              `UPDATE invernaderos SET estado = $1 WHERE id = $2`,
-              [estadoInv, invernadero_id],
+              `UPDATE invernaderos SET estado = 'en_movimiento' WHERE id = $1`,
+              [invernadero_id],
             );
           }
 
