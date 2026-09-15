@@ -10,7 +10,20 @@ export const obtenerZonas = async (
       `SELECT * FROM zonas WHERE activa = true ORDER BY id`,
     );
 
-    res.status(200).json({ ok: true, data: zonas.rows });
+    const zonasConInvernaderos = await Promise.all(
+      zonas.rows.map(async (zona) => {
+        const invernaderos = await pool.query(
+          `SELECT id, nombre, numero, grupo_id, estado, modo, activo, zona_id
+           FROM invernaderos
+           WHERE zona_id = $1 AND activo = true
+           ORDER BY numero`,
+          [zona.id],
+        );
+        return { ...zona, invernaderos: invernaderos.rows };
+      }),
+    );
+
+    res.status(200).json({ ok: true, data: zonasConInvernaderos });
   } catch (error) {
     console.error("Error obteniendo zonas:", error);
     res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
