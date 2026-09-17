@@ -22,7 +22,7 @@ export const recibirDatos = async (
       probabilidad_lluvia,
       presion_atmosferica,
       variadores,
-      grupos, // <-- AGREGAR ESTO
+      grupos,
     } = req.body;
 
     if (!zona_id || !plc_id) {
