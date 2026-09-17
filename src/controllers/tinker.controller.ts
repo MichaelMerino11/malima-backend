@@ -22,6 +22,7 @@ export const recibirDatos = async (
       probabilidad_lluvia,
       presion_atmosferica,
       variadores,
+      grupos, // <-- AGREGAR ESTO
     } = req.body;
 
     if (!zona_id || !plc_id) {
@@ -52,6 +53,7 @@ export const recibirDatos = async (
       ],
     );
 
+    // Procesar variadores
     if (variadores && Array.isArray(variadores)) {
       for (const v of variadores) {
         await pool.query(
@@ -74,13 +76,29 @@ export const recibirDatos = async (
       }
     }
 
+    // Procesar modos de grupos si vienen en el payload
+    if (grupos && Array.isArray(grupos)) {
+      for (const g of grupos) {
+        const { grupo_id, modo, modo_consistente } = g;
+
+        if (!grupo_id || !modo) continue;
+
+        await pool.query(
+          `UPDATE invernaderos SET modo = $1 WHERE grupo_id = $2`,
+          [modo, grupo_id],
+        );
+      }
+    }
+
     console.log(
       `📡 Telemetría recibida — site: ${site_id}, device: ${device_id}, plc: ${plc_id}, zona: ${zona_id}`,
     );
+
     // Emitir a todos los clientes de esa zona
     io.to(`zona-${zona_id}`).emit("estado-actualizado", {
       zona_id,
       variadores,
+      grupos, // <-- opcional: incluir grupos en el evento
       meteorologia: {
         temperatura,
         humedad,
@@ -94,8 +112,11 @@ export const recibirDatos = async (
     const tempMax = Number(
       (await getConfigValue("umbral_temperatura_max")) ?? 35,
     );
+
     const vientoMax = Number((await getConfigValue("umbral_viento_max")) ?? 40);
+
     const lluviaMin = Number((await getConfigValue("umbral_lluvia_min")) ?? 60);
+
     const humedadMax = Number(
       (await getConfigValue("umbral_humedad_max")) ?? 85,
     );
@@ -109,6 +130,7 @@ export const recibirDatos = async (
         tempMax,
       );
     }
+
     if (velocidad_viento_ms * 3.6 > vientoMax) {
       await registrarAlarma(
         zona_id,
@@ -118,6 +140,7 @@ export const recibirDatos = async (
         vientoMax,
       );
     }
+
     if ((probabilidad_lluvia ?? 0) > lluviaMin) {
       await registrarAlarma(
         zona_id,
@@ -127,6 +150,7 @@ export const recibirDatos = async (
         lluviaMin,
       );
     }
+
     if (humedad > humedadMax) {
       await registrarAlarma(
         zona_id,
@@ -136,10 +160,14 @@ export const recibirDatos = async (
         humedadMax,
       );
     }
+
     res.status(200).json({ ok: true, mensaje: "Datos recibidos" });
   } catch (error) {
     console.error("Error recibiendo datos de TinkerBoard:", error);
-    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+    res.status(500).json({
+      ok: false,
+      mensaje: "Error interno del servidor",
+    });
   }
 };
 
