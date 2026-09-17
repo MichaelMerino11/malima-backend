@@ -23,6 +23,7 @@ export const recibirDatos = async (
       presion_atmosferica,
       variadores,
       grupos,
+      presion_hpa,
     } = req.body;
 
     if (!zona_id || !plc_id) {
@@ -39,8 +40,8 @@ export const recibirDatos = async (
         : null;
 
     await pool.query(
-      `INSERT INTO datos_meteorologicos
-    (zona_id, temperatura, humedad, velocidad_viento, radiacion_solar, probabilidad_lluvia, presion_atmosferica)
+      `INSERT INTO datos_meteorologicos 
+   (zona_id, temperatura, humedad, velocidad_viento, radiacion_solar, probabilidad_lluvia, presion_atmosferica) 
    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         zona_id,
@@ -49,7 +50,7 @@ export const recibirDatos = async (
         velocidad_viento_kmh,
         radiacion_solar,
         probabilidad_lluvia ?? null,
-        presion_atmosferica ?? null,
+        presion_hpa ?? presion_atmosferica ?? null,
       ],
     );
 
