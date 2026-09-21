@@ -383,16 +383,29 @@ export const obtenerHistorial = async (
 ): Promise<void> => {
   try {
     const { zona_id } = req.params;
-    const limit = req.query.limit ?? 20;
+    const { desde, hasta, limit } = req.query;
 
-    const result = await pool.query(
-      `SELECT * FROM datos_meteorologicos
-       WHERE zona_id = $1
-       ORDER BY registrado_at DESC
-       LIMIT $2`,
-      [zona_id, limit],
-    );
+    let query: string;
+    let params: any[];
 
+    if (desde && hasta) {
+      query = `SELECT * FROM datos_meteorologicos
+               WHERE zona_id = $1
+                 AND registrado_at >= $2
+                 AND registrado_at <= $3
+               ORDER BY registrado_at ASC
+               LIMIT 2000`;
+      params = [zona_id, desde, hasta];
+    } else {
+      const limitNum = Number(limit ?? 20);
+      query = `SELECT * FROM datos_meteorologicos
+               WHERE zona_id = $1
+               ORDER BY registrado_at DESC
+               LIMIT $2`;
+      params = [zona_id, limitNum];
+    }
+
+    const result = await pool.query(query, params);
     res.status(200).json({ ok: true, data: result.rows });
   } catch (error) {
     console.error("Error obteniendo historial:", error);
