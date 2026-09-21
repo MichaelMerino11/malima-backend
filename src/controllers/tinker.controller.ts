@@ -87,13 +87,16 @@ export const recibirDatos = async (
     // Procesar modos de grupos si vienen en el payload
     if (grupos && Array.isArray(grupos)) {
       for (const g of grupos) {
-        const { grupo_id, modo, modo_consistente } = g;
-
-        if (!grupo_id || !modo) continue;
-
+        const { grupo_id, modo, modo_consistente, estado, estado_valido } = g;
+        if (!grupo_id) continue;
         await pool.query(
-          `UPDATE invernaderos SET modo = $1 WHERE grupo_id = $2`,
-          [modo, grupo_id],
+          `UPDATE invernaderos 
+       SET 
+         modo = COALESCE($1, modo),
+         estado = COALESCE($2, estado),
+         estado_valido = COALESCE($3, estado_valido)
+       WHERE grupo_id = $4`,
+          [modo ?? null, estado ?? null, estado_valido ?? null, grupo_id],
         );
       }
     }
