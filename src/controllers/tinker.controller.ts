@@ -377,38 +377,220 @@ export const obtenerUltimoEstado = async (
 };
 
 // GET /api/meteorologia/historial/:zona_id
+
+const rangos = {
+  "1h": {
+    intervalo: "1 hour",
+    bucket: null,
+  },
+
+  "6h": {
+    intervalo: "6 hours",
+    bucket: "2 minutes",
+  },
+
+  "24h": {
+    intervalo: "24 hours",
+    bucket: "10 minutes",
+  },
+
+  "7d": {
+    intervalo: "7 days",
+    bucket: "1 hour",
+  },
+
+  "30d": {
+    intervalo: "30 days",
+    bucket: "4 hours",
+  },
+} as const;
+
 export const obtenerHistorial = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
   try {
     const { zona_id } = req.params;
-    const { desde, hasta, limit } = req.query;
 
-    let query: string;
-    let params: any[];
+    const zonaId = Number(zona_id);
 
-    if (desde && hasta) {
-      query = `SELECT * FROM datos_meteorologicos
-               WHERE zona_id = $1
-                 AND registrado_at >= $2
-                 AND registrado_at <= $3
-               ORDER BY registrado_at ASC
-               LIMIT 2000`;
-      params = [zona_id, desde, hasta];
-    } else {
-      const limitNum = Number(limit ?? 20);
-      query = `SELECT * FROM datos_meteorologicos
-               WHERE zona_id = $1
-               ORDER BY registrado_at DESC
-               LIMIT $2`;
-      params = [zona_id, limitNum];
+    // =====================================================
+    // VALIDAR ZONA
+    // =====================================================
+
+    if (!Number.isInteger(zonaId) || zonaId <= 0) {
+      res.status(400).json({
+        ok: false,
+        mensaje: "zona_id no válido",
+      });
+
+      return;
     }
 
-    const result = await pool.query(query, params);
-    res.status(200).json({ ok: true, data: result.rows });
+    // =====================================================
+    // HISTORIAL RECIENTE RAW
+    //
+    // Ejemplo:
+    // GET /meteorologia/historial/1?limit=20
+    //
+    // Usado por:
+    // - tabla "Historial reciente"
+    // - exportaciones
+    // =====================================================
+
+    if (req.query.limit != null) {
+      const solicitado = Number(req.query.limit);
+
+      const limit = Number.isFinite(solicitado)
+        ? Math.min(100, Math.max(1, Math.trunc(solicitado)))
+        : 20;
+
+      const result = await pool.query(
+        `
+        SELECT
+          registrado_at,
+          temperatura,
+          humedad,
+          velocidad_viento,
+          radiacion_solar,
+          probabilidad_lluvia,
+          presion_atmosferica
+        FROM datos_meteorologicos
+        WHERE zona_id = $1
+        ORDER BY registrado_at DESC
+        LIMIT $2
+        `,
+        [zonaId, limit],
+      );
+
+      res.status(200).json({
+        ok: true,
+
+        data: result.rows,
+
+        meta: {
+          tipo: "reciente",
+          puntos: result.rows.length,
+        },
+      });
+
+      return;
+    }
+
+    // =====================================================
+    // HISTORIAL PARA GRÁFICO
+    //
+    // Ejemplo:
+    // GET /meteorologia/historial/1?rango=24h
+    // =====================================================
+
+    const rango = String(req.query.rango ?? "1h") as keyof typeof rangos;
+
+    const config = rangos[rango];
+
+    if (!config) {
+      res.status(400).json({
+        ok: false,
+        mensaje: "Rango no válido",
+      });
+
+      return;
+    }
+
+    let result;
+
+    // =====================================================
+    // 1 HORA
+    //
+    // Datos originales, sin agrupación.
+    // =====================================================
+
+    if (!config.bucket) {
+      result = await pool.query(
+        `
+        SELECT
+          registrado_at,
+          temperatura,
+          humedad,
+          velocidad_viento,
+          radiacion_solar,
+          probabilidad_lluvia,
+          presion_atmosferica
+        FROM datos_meteorologicos
+        WHERE zona_id = $1
+          AND registrado_at >= NOW() - $2::interval
+        ORDER BY registrado_at ASC
+        `,
+        [zonaId, config.intervalo],
+      );
+    } else {
+      // ===================================================
+      // RANGOS GRANDES
+      //
+      // Downsampling para evitar enviar miles
+      // de registros al frontend.
+      // ===================================================
+
+      result = await pool.query(
+        `
+        SELECT
+          date_bin(
+            $2::interval,
+            registrado_at,
+            TIMESTAMPTZ '2000-01-01 00:00:00+00'
+          ) AS registrado_at,
+
+          AVG(temperatura)::float
+            AS temperatura,
+
+          AVG(humedad)::float
+            AS humedad,
+
+          AVG(velocidad_viento)::float
+            AS velocidad_viento,
+
+          AVG(radiacion_solar)::float
+            AS radiacion_solar,
+
+          AVG(probabilidad_lluvia)::float
+            AS probabilidad_lluvia,
+
+          AVG(presion_atmosferica)::float
+            AS presion_atmosferica
+
+        FROM datos_meteorologicos
+
+        WHERE zona_id = $1
+          AND registrado_at >= NOW() - $3::interval
+
+        GROUP BY 1
+        ORDER BY 1 ASC
+        `,
+        [zonaId, config.bucket, config.intervalo],
+      );
+    }
+
+    // =====================================================
+    // RESPONSE
+    // =====================================================
+
+    res.status(200).json({
+      ok: true,
+
+      data: result.rows,
+
+      meta: {
+        tipo: "grafico",
+        rango,
+        puntos: result.rows.length,
+      },
+    });
   } catch (error) {
     console.error("Error obteniendo historial:", error);
-    res.status(500).json({ ok: false, mensaje: "Error interno del servidor" });
+
+    res.status(500).json({
+      ok: false,
+      mensaje: "Error interno del servidor",
+    });
   }
 };
