@@ -459,22 +459,22 @@ export const obtenerHistorial = async (
       params = [zona_id];
     } else if (desde && hasta) {
       query = `
-        SELECT
-          registrado_at,
-          temperatura,
-          humedad,
-          velocidad_viento,
-          radiacion_solar,
-          presion_atmosferica,
-          lluvia_intensidad,
-          lluvia_acumulada
-        FROM datos_meteorologicos
-        WHERE zona_id = $1
-          AND registrado_at >= $2
-          AND registrado_at <= $3
-        ORDER BY registrado_at ASC
-        LIMIT 2000
-      `;
+    SELECT
+      date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01') AS registrado_at,
+      AVG(temperatura)::numeric(5,2)          AS temperatura,
+      AVG(humedad)::numeric(5,2)              AS humedad,
+      AVG(velocidad_viento)::numeric(5,2)     AS velocidad_viento,
+      AVG(radiacion_solar)::numeric(8,2)      AS radiacion_solar,
+      AVG(presion_atmosferica)::numeric(7,2)  AS presion_atmosferica,
+      AVG(lluvia_intensidad)::numeric(7,1)    AS lluvia_intensidad,
+      AVG(lluvia_acumulada)::numeric(7,1)     AS lluvia_acumulada
+    FROM datos_meteorologicos
+    WHERE zona_id = $1
+      AND registrado_at >= $2
+      AND registrado_at <= $3
+    GROUP BY date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01')
+    ORDER BY registrado_at ASC
+  `;
       params = [zona_id, desde, hasta];
     } else {
       const limitNum = Number(limit ?? 20);
