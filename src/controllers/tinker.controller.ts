@@ -428,42 +428,35 @@ export const obtenerHistorial = async (
 
     if (rango) {
       type RangoKey = "1h" | "6h" | "24h" | "7d" | "30d";
-      const intervalos: Record<RangoKey, string> = {
-        "1h": "1 minute",
-        "6h": "2 minutes",
-        "24h": "10 minutes",
-        "7d": "1 hour",
-        "30d": "4 hours",
+
+      const intervalos: Record<RangoKey, { bin: string; desde: string }> = {
+        "1h": { bin: "1 minute", desde: "1 hour" },
+        "6h": { bin: "2 minutes", desde: "6 hours" },
+        "24h": { bin: "10 minutes", desde: "24 hours" },
+        "7d": { bin: "1 hour", desde: "7 days" },
+        "30d": { bin: "4 hours", desde: "30 days" },
       };
-      const inicio: Record<RangoKey, string> = {
-        "1h": "1 hour",
-        "6h": "6 hours",
-        "24h": "24 hours",
-        "7d": "7 days",
-        "30d": "30 days",
-      };
+
       const rangoKey = rango as string as RangoKey;
-      const intervalo = intervalos[rangoKey] ?? "10 minutes";
-      const desdeCalc = inicio[rangoKey] ?? "24 hours";
+      const cfg = intervalos[rangoKey] ?? intervalos["24h"];
 
       query = `
-  SELECT
-    date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01') AS registrado_at,
-    AVG(temperatura)::numeric(5,2)         AS temperatura,
-    AVG(humedad)::numeric(5,2)             AS humedad,
-    AVG(velocidad_viento)::numeric(5,2)    AS velocidad_viento,
-    AVG(radiacion_solar)::numeric(8,2)     AS radiacion_solar,
-    AVG(presion_atmosferica)::numeric(7,2) AS presion_atmosferica,
-    AVG(lluvia_intensidad)::numeric(7,1)   AS lluvia_intensidad,
-    AVG(lluvia_acumulada)::numeric(7,1)    AS lluvia_acumulada
-  FROM datos_meteorologicos
-  WHERE zona_id = $1
-    AND registrado_at >= $2
-    AND registrado_at <= $3
-  GROUP BY date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01')
-  ORDER BY registrado_at ASC
-`;
-      params = [intervalo, zona_id, desdeCalc];
+    SELECT
+      date_bin('${cfg.bin}', registrado_at, TIMESTAMPTZ '2001-01-01') AS registrado_at,
+      AVG(temperatura)::numeric(5,2)          AS temperatura,
+      AVG(humedad)::numeric(5,2)              AS humedad,
+      AVG(velocidad_viento)::numeric(5,2)     AS velocidad_viento,
+      AVG(radiacion_solar)::numeric(8,2)      AS radiacion_solar,
+      AVG(presion_atmosferica)::numeric(7,2)  AS presion_atmosferica,
+      AVG(lluvia_intensidad)::numeric(7,1)    AS lluvia_intensidad,
+      AVG(lluvia_acumulada)::numeric(7,1)     AS lluvia_acumulada
+    FROM datos_meteorologicos
+    WHERE zona_id = $1
+      AND registrado_at >= NOW() - INTERVAL '${cfg.desde}'
+    GROUP BY date_bin('${cfg.bin}', registrado_at, TIMESTAMPTZ '2001-01-01')
+    ORDER BY registrado_at ASC
+  `;
+      params = [zona_id];
     } else if (desde && hasta) {
       query = `
         SELECT
