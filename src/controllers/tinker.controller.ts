@@ -227,8 +227,8 @@ export const recibirConfirmacion = async (
       // Para movimiento_grupo incluir resumen de miembros en el detalle
       const resumenMiembros = miembros
         .map(
-          (m: any) =>
-            `V${m.variador_id}:${m.resultado}(${m.estado_real ?? "desconocido"})`,
+          (m: any, i: number) =>
+            `V${m.variador_id ?? m.id ?? i + 1}:${m.resultado}(${m.estado_real ?? "desconocido"})`,
         )
         .join(" | ");
       detalleCompleto = `resultado: ${resultado} | grupo_id: ${grupo_id} | miembros: [${resumenMiembros}]`;
