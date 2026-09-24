@@ -447,21 +447,22 @@ export const obtenerHistorial = async (
       const desdeCalc = inicio[rangoKey] ?? "24 hours";
 
       query = `
-        SELECT
-          date_bin($1::interval, registrado_at, TIMESTAMPTZ '2001-01-01') AS registrado_at,
-          AVG(temperatura)        AS temperatura,
-          AVG(humedad)            AS humedad,
-          AVG(velocidad_viento)   AS velocidad_viento,
-          AVG(radiacion_solar)    AS radiacion_solar,
-          AVG(presion_atmosferica) AS presion_atmosferica,
-          AVG(lluvia_intensidad)  AS lluvia_intensidad,
-          AVG(lluvia_acumulada)   AS lluvia_acumulada
-        FROM datos_meteorologicos
-        WHERE zona_id = $2
-          AND registrado_at >= NOW() - $3::interval
-        GROUP BY date_bin($1::interval, registrado_at, TIMESTAMPTZ '2001-01-01')
-        ORDER BY registrado_at ASC
-      `;
+  SELECT
+    date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01') AS registrado_at,
+    AVG(temperatura)::numeric(5,2)         AS temperatura,
+    AVG(humedad)::numeric(5,2)             AS humedad,
+    AVG(velocidad_viento)::numeric(5,2)    AS velocidad_viento,
+    AVG(radiacion_solar)::numeric(8,2)     AS radiacion_solar,
+    AVG(presion_atmosferica)::numeric(7,2) AS presion_atmosferica,
+    AVG(lluvia_intensidad)::numeric(7,1)   AS lluvia_intensidad,
+    AVG(lluvia_acumulada)::numeric(7,1)    AS lluvia_acumulada
+  FROM datos_meteorologicos
+  WHERE zona_id = $1
+    AND registrado_at >= $2
+    AND registrado_at <= $3
+  GROUP BY date_bin('5 minutes', registrado_at, TIMESTAMPTZ '2001-01-01')
+  ORDER BY registrado_at ASC
+`;
       params = [intervalo, zona_id, desdeCalc];
     } else if (desde && hasta) {
       query = `
