@@ -145,12 +145,10 @@ export const recibirEventoAlarma = async (
     } = req.body;
 
     if (!alarma_id || !tipo || !evento || !plc_id) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "alarma_id, tipo, evento y plc_id son requeridos",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "alarma_id, tipo, evento y plc_id son requeridos",
+      });
       return;
     }
 
@@ -160,24 +158,25 @@ export const recibirEventoAlarma = async (
       "falla_vfd",
       "fallo_comunicacion_nodo_lora",
       "proteccion_red_rm22",
+      "fallo_estacion_meteorologica",
+      "conflicto_ordenes_vfd",
+      "fallo_no_arranque_vfd",
+      "exceso_tiempo_marcha",
     ];
+    
     if (!tiposValidos.includes(tipo)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: `tipo debe ser: ${tiposValidos.join(", ")}`,
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: `tipo debe ser: ${tiposValidos.join(", ")}`,
+      });
       return;
     }
 
     if (!["activacion", "restablecimiento"].includes(evento)) {
-      res
-        .status(400)
-        .json({
-          ok: false,
-          mensaje: "evento debe ser: activacion o restablecimiento",
-        });
+      res.status(400).json({
+        ok: false,
+        mensaje: "evento debe ser: activacion o restablecimiento",
+      });
       return;
     }
 
