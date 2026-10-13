@@ -26,6 +26,10 @@ export const recibirDatos = async (
       presion_hpa,
       lluvia_intensidad,
       lluvia_acumulada,
+      configuracion_control,
+      estado_lluvia,
+      estado_predictor,
+      diagnostico_predictor,
     } = req.body;
 
     if (!zona_id || !plc_id) {
@@ -97,6 +101,32 @@ export const recibirDatos = async (
          estado_valido = COALESCE($3, estado_valido)
        WHERE grupo_id = $4`,
           [modo ?? null, estado ?? null, estado_valido ?? null, grupo_id],
+        );
+      }
+    }
+
+    // R13 — Guardar estado del predictor si viene en el payload
+    if (estado_predictor && plc_id) {
+      await pool.query(
+        `INSERT INTO estado_predictor (plc_id, datos, registrado_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (plc_id) DO UPDATE SET
+       datos = EXCLUDED.datos,
+       registrado_at = EXCLUDED.registrado_at`,
+        [plc_id, JSON.stringify(estado_predictor)],
+      );
+    }
+
+    // R13 — Guardar configuración de control si viene con readback
+    if (configuracion_control && plc_id) {
+      for (const [tipo, parametros] of Object.entries(configuracion_control)) {
+        await pool.query(
+          `INSERT INTO configuracion_plc (plc_id, tipo, parametros, aplicado_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (plc_id, tipo) DO UPDATE SET
+         parametros = EXCLUDED.parametros,
+         aplicado_at = EXCLUDED.aplicado_at`,
+          [plc_id, tipo, JSON.stringify(parametros)],
         );
       }
     }
